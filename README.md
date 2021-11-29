@@ -30,5 +30,5 @@ python DMESSM.py --dataset stackoverflow -- maxiter 2600 --ae_weights data/stack
 
 #### Important notes
 
-Because our paper is in submission status, we temporarily hide part of the important code , data and models. We will release them after the  acceptance of the paper. You can  pay attention to this repository!
+We release the complete code!
 
