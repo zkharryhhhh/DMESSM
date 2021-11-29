@@ -34,19 +34,40 @@ def jsloss(y_true, y_pred):
 
 
 
+def Att(att_dim,inputs,name):
+    V = inputs
+    QK = Dense(att_dim, use_bias=False)(inputs)
+    QK = Activation("softmax",name=name)(QK)
+    MV = Multiply()([V, QK])
+    return(MV)
 
 
-# temporarily hide the attention
-# def Att(att_dim,inputs,name):
-#
-#
-#
-# def selfattoptions(args):
-#
-#
-#
-# def SelfAtt(att_dim,inputs,name,i):
-#
+def selfattoptions(args):
+    q = args[0]
+    k = args[1]
+    v = args[2]
+
+    q = tf.expand_dims(q,-1)
+    k = tf.expand_dims(k,-1)
+    v = tf.expand_dims(v,-1)
+    
+    QK = K.batch_dot(q, K.permute_dimensions(k,[0,2,1]))
+    QK = QK /(20**0.5) 
+    QK = K.softmax(QK)
+    MV = K.batch_dot(QK,v) 
+    MV = tf.squeeze(MV,-1)
+    return MV
+
+
+def SelfAtt(att_dim,inputs,name,i):
+
+    Qq = Dense(att_dim, use_bias=False)(inputs)
+    Kk = Dense(att_dim, use_bias=False)(inputs)
+    Vv = Dense(att_dim, use_bias=False)(inputs)
+    res = tf.keras.layers.Lambda(selfattoptions, name = 'attentionvecop_%d' % i)([Qq, Kk, Vv])
+    MV = res
+    
+    return(MV)
 
 
 
@@ -67,7 +88,9 @@ def autoencoder(dims, act=tf.nn.leaky_relu, init='glorot_uniform'):
 
     ######################
     # attention and skip connection here
-
+    
+    h_att = SelfAtt(dims[-1],h,'attentionvec',n_stacks)
+    h = tf.keras.layers.add([h,h_att])
     y = h
 
     # decoder
@@ -121,7 +144,7 @@ def autoencoder_vae(dims, act=tf.nn.leaky_relu, init='glorot_uniform'):
     res1.compile(optimizer='rmsprop')
     # decode_loss = tf.keras.metrics.binary_crossentropy(x, y)
     # kl_loss = -5e-4*K.mean(1+encode_log_var-K.square(encode_mean)-K.exp(encode_log_var))
-    # res1.add_loss(K.mean(decode_loss+kl_loss)) #新出的方法，方便得很
+    # res1.add_loss(K.mean(decode_loss+kl_loss)) 
     return res1, res2
 
 
@@ -214,7 +237,7 @@ class STC(object):
         x_n = x + noise_factor*np.random.normal(loc=0.0,scale=1.0,size = x.shape)
         self.autoencoder.fit(x_n, x, batch_size=batch_size, epochs=epochs)
         print('Pretraining time: %ds' % round(time() - t0))
-        # 保存模型参数
+        # 
         self.autoencoder.save_weights(save_dir + '/ae_weights.h5')
 
         print('Pretrained weights are saved to %s/ae_weights.h5' % save_dir)
@@ -222,13 +245,13 @@ class STC(object):
         self.pretrained = True
     
 
-    # 载入模型参数
+   
     def load_weights(self, weights):
         self.model.load_weights(weights)
-    # 提取特征
+    
     def extract_features(self, x):
         return self.encoder.predict(x)
-    # 预测结果
+   
     def predict(self, x):
         q = self.model.predict(x, verbose=0)
         return q.argmax(1)
@@ -238,11 +261,21 @@ class STC(object):
         weight = q ** 2 / q.sum(0)
         return (weight.T / weight.sum(1)).T
 
-    # # we temporarily hide our target distribution, we'll release after the paper results
-    # @staticmethod
-    # def target_distribution_new(q):
-    #
-    #     return q
+    
+    @staticmethod
+    def target_distribution_new(q):
+        q = q.astype(float)
+        g_function_q = np.zeros_like(q)
+        g_function_q = g_function_q.astype(float)
+        for i in range(q.shape[0]):
+            for j in range(q.shape[1]):
+                if q[i][j] >= 0.5:
+                    g_function_q[i][j] = 0.5 * ( (2.0*q[i][j]-1.0) ** (1.0/3) ) +0.5
+                else:
+                    g_function_q[i][j] = 0.5 - 0.5 * ( (1.0 - 2.0*q[i][j]) ** (1.0/3) ) 
+        
+        weight = g_function_q ** 2 / q.sum(0)
+        return (weight.T / weight.sum(1)).T
 
     def compile(self, optimizer='sgd', loss='kld'):
         self.model.compile(optimizer=optimizer, loss=loss)
